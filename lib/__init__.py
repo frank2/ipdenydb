@@ -1,26 +1,11 @@
 #!/usr/bin/env python
 
-import argparse
-import json
-import os
-import sys
+from ipdenydb import db
+from ipdenydb import schema
 
-import psycopg2
+from ipdenydb.db import *
+from ipdenydb.schema import *
 
-country_table = '''CREATE TABLE ipdenydb_countries
-(
-    id SERIAL,
-    shortform VARCHAR(2) NOT NULL,
-    longform TEXT NOT NULL
-);'''
-
-block_table = '''CREATE_TABLE ipdenydb_blocks
-(
-    id SERIAL,
-    country_id INT NOT NULL,
-    block CIDR NOT NULL,
-    FOREIGN KEY (country_id) REFERENCES ipdenydb_countries (id)
-);'''
-
-if __name__ == '__main__':
-    pass
+__all__ = ['db', 'schema'] +\
+    db.__all__ +\
+    schema.__all__

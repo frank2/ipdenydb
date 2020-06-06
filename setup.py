@@ -15,7 +15,7 @@ setup(
     ,packages = ['ipdenydb']
     ,include_package_data = True
     ,package_data = {'ipdenydb': ['*.json']}
-    ,install_requires = ['martinellis', 'psycopg2']
+    ,install_requires = ['martinellis', 'psycopg2', 'requests']
     ,long_description = '''A database interface for IPDeny's IP block data.'''
     ,classifiers = [
         'Development Status :: 3 - Alpha'
