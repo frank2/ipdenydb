@@ -29,6 +29,9 @@ class Database(object):
                                        ,password=self.config['password'])
 
     def disconnect(self):
+        if not self.cursor is None:
+            self.close()
+            
         if not self.handle is None:
             self.handle.close()
 
