@@ -17,7 +17,8 @@ class Countries(object):
     longform TEXT NOT NULL
 )'''
 
-    def countries(self):
+    @classmethod
+    def countries(cls):
         db = Database()
         db.query('SELECT id, shortform, longform FROM ipdenydb_countries')
         results = db.fetchall()
@@ -31,7 +32,8 @@ class Countries(object):
 
         return countries
 
-    def by_id(self, country_id):
+    @classmethod
+    def by_id(cls, country_id):
         db = Database()
         db.query('SELECT id, shortform, longform FROM ipdenydb_countries WHERE id = %s', country_id)
         results = db.fetchone()
@@ -43,8 +45,9 @@ class Countries(object):
         country_id, shortform, longform = results
         
         return Country(id=country_id, shortform=shortform, longform=longform)
-    
-    def by_shortform(self, shortform):
+
+    @classmethod
+    def by_shortform(cls, shortform):
         db = Database()
         db.query('SELECT id, shortform, longform FROM ipdenydb_countries WHERE shortform = %s', shortform)
         results = db.fetchone()
@@ -100,6 +103,32 @@ class Country(object):
 
         return blocks
 
+    def random_block(self, ipv4=False, ipv6=False):
+        if not ipv4 and not ipv6:
+            raise ValueError('IPv4 or IPv6 blocks must be selected')
+        
+        query = 'SELECT b.id, b.block FROM ipdenydb_countries AS c, ipdenydb_blocks AS b WHERE b.country_id = c.id AND c.id = %s'
+        
+        if ipv4 and not ipv6:
+            query = '{} AND family(b.block) = 4'.format(query)
+        elif ipv6 and not ipv4:
+            query = '{} AND family(b.block) = 6'.format(query)
+
+        query = '{} ORDER BY random() LIMIT 1'.format(query)
+
+        db = Database()
+        db.query(query, self.id)
+        result = db.fetchone()
+        db.disconnect()
+
+        if result is None:
+            raise RuntimeError('no results found')
+
+        block_id, block = result
+        block = Block(id=block_id, country=self, block=block)
+
+        return block
+
 class Blocks(object):
     TABLE = '''CREATE TABLE ipdenydb_blocks
 (
@@ -109,7 +138,8 @@ class Blocks(object):
     FOREIGN KEY (country_id) REFERENCES ipdenydb_countries (id)
 )'''
 
-    def by_ip(self, ip_addr):
+    @classmethod
+    def by_ip(cls, ip_addr):
         db = Database()
 
         if isinstance(ip_addr, str):

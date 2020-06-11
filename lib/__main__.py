@@ -54,8 +54,7 @@ def country_update(family, tarball):
         shortform = tarinfo.name.split('/')[1]
         shortform = shortform.split('.')[0]
         shortform = shortform.upper()
-        countries = Countries()
-        country = countries.by_shortform(shortform)
+        country = Countries.by_shortform(shortform)
 
         print('[*] Extracting {}...'.format(shortform))
 
