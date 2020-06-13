@@ -8,6 +8,16 @@ import psycopg2
 
 __all__ = ['Database']
 
+class Singleton(object):
+    def __init__(self, cls):
+        self.instance = None
+        self.cls = cls
+    def __call__(self, *args, **kwargs):
+        if self.instance is None:
+            self.instance = self.cls(*args, **kwargs)
+
+        return self.instance
+
 class Database(object):
     def __init__(self, **kwargs):
         config_file = os.path.join(sys.prefix, 'etc/ipdenydb.json')
@@ -83,3 +93,5 @@ class Database(object):
             raise RuntimeError('no cursor available')
 
         return self.cursor.fetchall()
+
+Database = Singleton(Database)

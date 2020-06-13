@@ -10,7 +10,7 @@ import tempfile
 import requests
 
 from ipdenydb.db import Database
-from ipdenydb.schema import Countries, Blocks
+from ipdenydb.schema import Countries, Blocks, Addresses
 
 def install():
     db = Database()
@@ -18,6 +18,7 @@ def install():
     print('[*] Creating tables...')
     db.query(Countries.TABLE)
     db.query(Blocks.TABLE)
+    db.query(Addresses.TABLE)
     db.commit()
 
     print('[*] Adding countries...')
@@ -39,6 +40,7 @@ def install():
     db.query('INSERT INTO ipdenydb_countries (longform, shortform) VALUES (%s, %s)', 'ASIA-PACIFIC REGION', 'AP')
     db.query('INSERT INTO ipdenydb_countries (longform, shortform) VALUES (%s, %s)', 'SOUTH SUDAN', 'SS')
     db.query('INSERT INTO ipdenydb_countries (longform, shortform) VALUES (%s, %s)', 'EUROPE', 'EU')
+    db.query('INSERT INTO ipdenydb_countries (longform, shortform) VALUES (%s, %s)', 'BOGON', 'ZZ')
         
     db.commit()
     update()
@@ -82,10 +84,21 @@ def country_update(family, tarball):
         deleted_blocks = current_blocks - new_blocks
 
         print('[*] {} blocks added, {} blocks removed.'.format(len(added_blocks), len(deleted_blocks)))
+        db.query('SELECT id FROM ipdenydb_countries WHERE shortform=%s', 'ZZ')
+        bogon_id = db.fetchone()[0]
+        migrations = list()
 
         for block in deleted_blocks:
-            db.query('DELETE FROM ipdeny_blocks WHERE block=%s', block)
+            try:
+                db.query('DELETE FROM ipdenydb_blocks WHERE block=%s', block)
+                continue
+            except:
+                pass
 
+            db.query('UPDATE ipdenydb_blocks SET country_id=%s WHERE block=%s', bogon_id, block)
+
+            migrations.append(block)
+            
         print('[*] Committing deletions...')
         db.commit()
         
@@ -95,9 +108,26 @@ def country_update(family, tarball):
         print('[*] Committing additions...')
         db.commit()
 
-        print('[*] {} finished.'.format(shortform))
+        if len(migrations) > 0:
+            print('[*] Migrating addresses...')
+            db.query('SELECT a.id, a.address FROM ipdenydb_countries AS c, ipdenydb_blocks AS b, ipdenydb_addresses AS a WHERE a.block_id = b.id AND b.country_id = c.id AND c.shortform = %s', 'ZZ')
+            results = db.fetchall()
 
-    db.disconnect()
+            for result in results:
+                addr_id, address = result
+                db.query('SELECT b.id FROM ipdenydb_blocks AS b, ipdenydb_countries AS c WHERE b.country_id = c.id AND c.shortform != %s AND %s << b.block', 'ZZ', address)
+                result = db.fetchone()
+
+                db.query('SELECT b.block FROM ipdenydb_blocks AS b, ipdenydb_addresses AS a WHERE a.block_id = b.id AND a.id = %s', addr_id)
+                block = db.fetchone()[0]
+
+                if not result is None:
+                    db.query('UPDATE ipdenydb_addresses SET block_id=%s WHERE id=%s', result[0], addr_id)
+                    db.query('DELETE FROM ipdenydb_blocks WHERE block=%s', block)
+
+                migrations.remove(block)
+                
+        print('[*] {} finished.'.format(shortform))
         
 def update():
     print('[*] Grabbing IPv4 tarball...')

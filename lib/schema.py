@@ -3,11 +3,12 @@
 import os
 import sys
 
-from martinellis import Address, CIDR
+from martinellis import Address as _Address
+from martinellis import CIDR
 
 from ipdenydb.db import Database
 
-__all__ = ['Countries', 'Country', 'Blocks', 'Block']
+__all__ = ['Countries', 'Country', 'Blocks', 'Block', 'Addresses', 'Address']
 
 class Countries(object):
     TABLE = '''CREATE TABLE ipdenydb_countries
@@ -22,7 +23,6 @@ class Countries(object):
         db = Database()
         db.query('SELECT id, shortform, longform FROM ipdenydb_countries')
         results = db.fetchall()
-        db.disconnect()
 
         countries = list()
 
@@ -37,7 +37,6 @@ class Countries(object):
         db = Database()
         db.query('SELECT id, shortform, longform FROM ipdenydb_countries WHERE id = %s', country_id)
         results = db.fetchone()
-        db.disconnect()
 
         if results is None:
             raise ValueError('{} not found'.format(country_id))
@@ -51,7 +50,6 @@ class Countries(object):
         db = Database()
         db.query('SELECT id, shortform, longform FROM ipdenydb_countries WHERE shortform = %s', shortform)
         results = db.fetchone()
-        db.disconnect()
 
         if results is None:
             raise ValueError('{} not found'.format(shortform))
@@ -93,7 +91,6 @@ class Country(object):
         db = Database()
         db.query(query, self.id)
         results = db.fetchall()
-        db.disconnect()
         blocks = list()
 
         for row in results:
@@ -119,7 +116,6 @@ class Country(object):
         db = Database()
         db.query(query, self.id)
         result = db.fetchone()
-        db.disconnect()
 
         if result is None:
             raise RuntimeError('no results found')
@@ -142,17 +138,24 @@ class Blocks(object):
     def by_ip(cls, ip_addr):
         db = Database()
 
-        if isinstance(ip_addr, str):
-            ip_addr = Address.blind_assertion(ip_addr)
-
-        ip_addr = str(ip_addr) # convert it back into a string
-
-        db.query('SELECT id, country_id, block FROM ipdenydb_blocks WHERE block >> %s', ip_addr)
+        db.query('SELECT id, country_id, block FROM ipdenydb_blocks WHERE block >> %s', str(ip_addr))
         result = db.fetchone()
-        db.disconnect()
 
         if result is None:
             return
+
+        block_id, country_id, block = result
+        return Block(id=block_id, country_id=country_id, block=block)
+
+    @classmethod
+    def by_id(cls, block_id):
+        db = Database()
+
+        db.query('SELECT id, country_id, block FROM ipdenydb_blocks WHERE id = %s', block_id)
+        result = db.fetchone()
+
+        if result is None:
+            raise ValueError('no such block id {}'.format(block_id))
 
         block_id, country_id, block = result
         return Block(id=block_id, country_id=country_id, block=block)
@@ -184,9 +187,69 @@ class Block(object):
             raise ValueError('block cannot be None')
 
         if self.country is None:
-            countries = Countries()
-            self.country = countries.by_id(self.country_id)
+            self.country = Countries.by_id(self.country_id)
 
     @property
     def cidr(self):
         return CIDR.blind_assertion(self.block)
+
+class Addresses(object):
+    TABLE = '''CREATE TABLE ipdenydb_addresses
+(
+    id SERIAL PRIMARY KEY,
+    block_id INT NOT NULL,
+    address INET NOT NULL,
+    FOREIGN KEY (block_id) REFERENCES ipdenydb_blocks (id)
+)'''
+
+    @classmethod
+    def get_or_add(cls, address):
+        db = Database()
+        db.query('SELECT id, block_id, address FROM ipdenydb_addresses WHERE address = %s', str(address))
+        result = db.fetchone()
+
+        if result is None:
+            block = Blocks.by_ip(address)
+
+            if block is None:
+                raise RuntimeError('address has no parent block')
+
+            db.query('INSERT INTO ipdenydb_addresses (block_id, address) VALUES (%s, %s) RETURNING id', block.id, str(address))
+            new_id = db.fetchone()[0]
+            result = (new_id, block.id, str(address))
+
+        addr_id, block_id, address = result
+        return Address(id=addr_id, block_id=block_id, address=address)
+
+class Address(object):
+    ID = None
+    BLOCK_ID = None
+    ADDRESS = None
+    
+    def __init__(self, **kwargs):
+        self.id = kwargs.setdefault('id', self.ID)
+        self.block_id = kwargs.setdefault('block_id', self.BLOCK_ID)
+        self.block = kwargs.setdefault('block', None)
+        self.address = kwargs.setdefault('address', self.ADDRESS)
+
+        if not self.block is None:
+            if not isinstance(self.block, Block):
+                raise ValueError('block must be a Block object')
+            else:
+                self.block_id = self.block.id
+
+        if self.id is None:
+            raise ValueError('id cannot be None')
+
+        if self.block_id is None:
+            raise ValueError('block_id cannot be None')
+
+        if self.address is None:
+            raise ValueError('address cannot be None')
+
+        if self.block is None:
+            self.block = Blocks.by_id(self.block_id)
+
+    @property
+    def family(self):
+        return _Address.blind_assertion(self.address)
